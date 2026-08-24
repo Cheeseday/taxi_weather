@@ -14,6 +14,7 @@ df = spark.read.parquet("data/cleaned_trips")
 
 df = df.filter((f.col("speed_mph") < speed_threshold))
 
+# Group the df by pickup hour and create aggregations for further analysis
 hourly = df.groupBy("pickup_hour").agg(
     f.count("*").alias("trips_amount_hourly"),
     f.round(f.sum("total_amount"))
@@ -28,14 +29,18 @@ hourly = df.groupBy("pickup_hour").agg(
         .alias("avg_speed_mph") 
 )
 
+# Create weatherDF from json 
 w_df = spark.read.json("data/archive")
 weather_df = spark.createDataFrame(
     zip(w_df.first()["hourly"][0], w_df.first()["hourly"][1], w_df.first()["hourly"][2]), 
     schema=["precipitation", "temperature", "pickup_hour"]
 )
 
+# Join weather data with trips data
 extended_df = hourly.join(weather_df, "pickup_hour").sort("pickup_hour").cache()
 extended_df.show(n=10)
+
+extended_df.coalesce(1).repartition(1).write.mode("overwrite").parquet("data/findings")
 
 # Finding relation between weather and speed, tips amount, trip distance
 rainy_df = extended_df.filter(f.col("precipitation") >= rainy_hour_threshold).agg(
@@ -64,6 +69,7 @@ print(f"During rainy hours: \n \
         the speed (in mph) is {round((1 - r_speed / n_speed) * 100, 1)} percent lower than when it's not raining."
 )
 
+# Finding the relation between temperature and indicators like tip percentage, trip speed, trip volume 
 temp_buckets = ((-10, -5), (-5, 0), (0, 5), (5, 10), (10, 15), (15, 20), (20, 25))
 stat = []
 for lower, upper in temp_buckets:
@@ -116,7 +122,7 @@ ax.set_title("Average speed in rainy hours and in non-rainy hours")
 plt.show()
 
 
-# Hourly trip volume changes with rain
+# Hourly trip volume changes with rain (it's growing significantly)
 fig, ax = plt.subplots()
 bar_colors = ['tab:olive', 'tab:cyan']
 

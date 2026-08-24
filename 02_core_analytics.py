@@ -6,7 +6,7 @@ spark = SparkSession.builder.appName("taxi_weather").master("local[*]").getOrCre
 
 df = spark.read.parquet("data/cleaned_trips")
 
-# Trips and total revenue per day, per hour of day, and per day of week
+# Trips and total revenue aggregated per day, per hour of day, and per day of week
 daily = df.groupBy("pickup_date").agg(
     f.count("*").alias("trips_per_day"),
     f.round(f.sum("total_amount")).alias("revenue_per_day")

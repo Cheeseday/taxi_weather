@@ -8,18 +8,18 @@ card_payment = 1 # verbal explanation what the threshold means
 
 df = spark.read.parquet("data/cleaned_trips")
 
-# Broadcast
+# Use a broadcast join to enrich df with NYC zone data.
 zone_df = spark.read.option("header", True).csv("data/taxi_zone_lookup.csv")
 df_b = f.broadcast(zone_df)
 
-# Pickup
+# Top-10 pickup zones in NYC
 df_pickup = df.join(df_b, df["PULocationID"] == df_b["LocationID"])
 print("Top 10 pickup zones:")
 df_pickup.groupBy("Zone").agg(
     f.count("*").alias("Number of pickups")
 ).sort("Number of pickups", ascending=False).show(n=10, truncate=False)
 
-# Dropoff
+# Top-10 dropoff zones 
 df_dropoff = df.join(df_b, df["DOLocationID"] == df_b["LocationID"])
 print("Top 10 dropoff zones:")
 df_dropoff.groupBy("Zone").agg(
@@ -38,4 +38,3 @@ df_pickup.groupBy("Borough").agg(
         f.count("*").alias("trip_amount"),
         f.round(f.avg(f.when(f.col("tip_amount") == 0, 1).otherwise(0)), 2).alias("Zero tip share"),
 ).sort("Average tip percentage", ascending=False).show()
-
