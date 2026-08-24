@@ -125,7 +125,7 @@ y = [r_trips_volume, n_trips_volume]
 bars = ax.bar(x, y, color=bar_colors)
 
 ax.bar_label(bars, padding=1)
-ax.set_ylabel("Number of t`rips")
+ax.set_ylabel("Number of trips")
 ax.set_title("Average number of trips in rainy hours and in non-rainy hours")
 plt.show()
 
@@ -137,24 +137,23 @@ trips = [row[3] for row in stat]
 temperature_intervals = ["[-10..-5)", "[-5..-0)", "[0..+5)", "[+5..+10)", "[+10..+15)", "[+15..+20)", "[+20..+25)"]
 
 fig, ax = plt.subplots()
-fig.subplots_adjust(right=0.75, bottom=0.2)
+fig.subplots_adjust(right=0.75, bottom=0.22)
 fig.suptitle("How temperature relates to tips, speed and number of trips")
 twin1 = ax.twinx()
 twin2 = ax.twinx()
 
-# Offset the right spine of twin2.  The ticks and label have already been
-# placed on the right by twinx above.
+# Offset the right spine of twin2
 twin2.spines.right.set_position(("axes", 1.2))
 
 x = range(len(temperature_intervals))
 
-p1, = ax.plot(x, tips, "C0", label="Average tips (%)")
-p2, = twin1.plot(x, speed, "C1", label="Average speed (mph)")
-p3, = twin2.plot(x, trips, "C2", label="Average number of trips")
+p1, = ax.plot(x, tips, "C0", label="Average tips (%)", linewidth=2)
+p2, = twin1.plot(x, speed, "C1", label="Average speed (mph)", linewidth=2)
+p3, = twin2.plot(x, trips, "C2", label="Average number of trips", linewidth=2)
 
-ax.set(ylim=(22, 26), xlabel="Temperature intervals", ylabel="Tips (%)")
+ax.set(ylim=(22, 27), xlabel="Temperature interval (°C)", ylabel="Tips (%)")
 twin1.set(ylim=(8, 20), ylabel="Speed (mph)")
-twin2.set(ylim=(2500, 8000), ylabel="Number of trips")
+twin2.set(ylim=(2200, 9000), ylabel="Number of trips")
 
 ax.yaxis.label.set_color(p1.get_color())
 twin1.yaxis.label.set_color(p2.get_color())
@@ -167,5 +166,5 @@ twin2.tick_params(axis='y', colors=p3.get_color())
 ax.set_xticks(list(x))
 ax.set_xticklabels(temperature_intervals, rotation=45, ha="right")
 
-ax.legend(handles=[p1, p2, p3])
+ax.legend(handles=[p1, p2, p3], loc=1)
 plt.show()
