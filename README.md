@@ -72,7 +72,6 @@ Revenue and the number of trips usually reach their maximum at 5 and 6 p.m. (rus
 ![Average revenue and trip volume by the hour of day](figures/revenue_and_trips_by_hour.png)
 
 
-
 ### Trips and revenue per day of week
 
 Seems unobviously, but statistically Thursday is the busiest day of the week (in terms of revenue and number of trips). The "Thursday is a little Friday" rule applies.  
@@ -116,12 +115,43 @@ Difference between the data in the coldest interval and in the warmest one:
 
 ## Questions
 
-1. **Cash trips** Tips field wasn't populated for cash trips - it contains 0.0 everywhere for them.
+1. **Cash trips:** tips field wasn't populated for cash trips - ``tip_amount`` contains 0.0 everywhere for them.
 
-2. **Broadcast join**
+2. **Difference between transformations and actions:** the data is loaded when Spark is triggered by action (`.show()`, in that case). For the actual computation **an action** is always needed, because transformation operations are lazy evaluated - the code computes only when the answer is needed, otherwise program delays the task:
 
-3. 
+```bash
+   df = spark.read.parquet("data/cleaned_trips")
 
-4. 
+   daily = df.groupBy("pickup_date").agg(
+      f.count("*").alias("trips_per_day"), 
+      f.round(f.sum("total_amount")).alias("revenue_per_day")
+   ).sort("pickup_date")
+```
 
-5. It was partitioned by `date` because that's the natural write key - adding new months becomes simpler and faster. It pays off in filtering queries where date is specified - Spark prunes the partitions and reads only the dates it needs. And in this specific case it is a good partition size - not so coarse for pruning and not so fine that the number of files becomes a problem.
+&emsp;&emsp;wait until action (lazy evaluation)
+
+```bash
+   daily.show()
+```
+
+&emsp;&emsp;action is here, can be executed.
+
+3. For the **broadcast join** *no shuffle is required*. Spark takes the smaller table, broadcasts (copies) it to every executor in the cluster, then builds an in-memory hash table on each executor. The larger table stays partitioned, and each executor performs a local hash lookup to find matches. Make sense when one side is smaller than `spark.sql.autoBroadcastJoinThreshold` (default 10MB).
+
+4. **Narrow and wide transformations:** shuffles usually happen with wide transformation and never with narrow transformation.
+
+&emsp;&emsp;Narrow transformation:
+
+```bash
+   df.filter((f.col("speed_mph") < speed_threshold))
+```
+
+&emsp;&emsp;Wide transformation (need a shuffle):
+
+```bash
+   df.groupBy("pickup_date")
+```
+
+&emsp;&emsp;But "number of wide transformations" and "number of shuffles" are not always the same number. For example join usually has two input tables. It is one wide transformation, but it needs both sides shuffled.
+
+5. **Cleaned output partitioned by date:** it was partitioned by `date` because that's the natural write key - adding new months becomes simpler and faster. It pays off in filtering queries where date is specified - Spark prunes the partitions and reads only the dates it needs. And in this specific case it is a good partition size - not so coarse for pruning and not so fine that the number of files becomes a problem.
