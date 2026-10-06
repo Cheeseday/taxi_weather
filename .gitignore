@@ -1,2 +1,6 @@
-# Cleaned data
-data/cleaned_trips/
+# Raw downloads and every derived output.
+# Regenerate with: python 00_download.py && python 01_load_and_clean.py
+data/
+
+__pycache__/
+*.pyc

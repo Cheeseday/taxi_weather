@@ -19,14 +19,20 @@ It is an analytics pipeline that answers a real question: **does weather affect 
 **Requirements:** Java 11 or 17 (`java -version`), Python 3, and:
 
 ```bash
-pip install pyspark matplotlib
+pip install pyspark requests matplotlib
 ```
 
-**The raw data is already here** in `data/`. So, you don't need to load it by your own.
+**No data is tracked in this repository** - `data/` is gitignored and rebuilt from the three public sources listed above.
 
 **Note:** you should check every path to raw data carefully, several of them uses absolute path.
 
 **Run** from the repository root, in this order. Spark runs in local mode (`local[*]`), no cluster needed.
+
+```bash
+python 00_download.py
+```
+
+It fetches the three monthly Parquet files (~155 MB), the zone lookup CSV and the Open-Meteo weather JSON into `data/`, checking each one after it lands. Re-running skips files that are already present and intact, so it is safe to repeat; `--force` re-downloads everything.
 
 ```bash
 python 01_load_and_clean.py
@@ -36,6 +42,7 @@ It cleans the raw trips and writes `data/cleaned_trips/`, partitioned by `pickup
 
 | Script | What it does |
 |---|---|
+| `00_download.py` | Downloads the raw trips, zone lookup and weather JSON into `data/` |
 | `01_load_and_clean.py` | Loads 3 months, applies cleaning rules, adds derived columns |
 | `02_core_analytics.py` | Trips/revenue per day, hour, weekday; daily averages |
 | `03_weather_enrichment.py` | Joins Open-Meteo hourly weather, rain and temperature analysis |
