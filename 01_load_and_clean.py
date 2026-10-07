@@ -1,7 +1,15 @@
 from pyspark.sql import SparkSession
 from pyspark.sql import functions as f
 
-spark = SparkSession.builder.appName("taxi_weather").master("local[*]").getOrCreate()
+# Trip timestamps are naive NYC wall-clock values. Pin the session zone so
+# Spark does no DST arithmetic on them, and so every script in the pipeline
+# reads back exactly what the previous one wrote. See 03 for the full reason.
+spark = (
+    SparkSession.builder.appName("taxi_weather")
+    .master("local[*]")
+    .config("spark.sql.session.timeZone", "UTC")
+    .getOrCreate()
+)
 
 df = spark.read.parquet(
             "/home/ales/Documents/taxi_weather/data/yellow_tripdata_2024-01.parquet",

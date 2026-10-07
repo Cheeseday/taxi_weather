@@ -2,7 +2,31 @@ from pyspark.sql import SparkSession
 from pyspark.sql import functions as f
 import matplotlib.pyplot as plt
 
-spark = SparkSession.builder.appName("taxi_weather").master("local[*]").getOrCreate()
+from pathlib import Path
+
+
+FIGURES = Path(__file__).resolve().parent / "figures"
+
+
+def save_figure(name):
+    """Write the current figure to figures/<name>.png, then show it.
+
+    savefig has to run before show(): several matplotlib backends clear the
+    figure when it is shown, which would leave an empty file behind.
+    """
+    FIGURES.mkdir(exist_ok=True)
+    plt.savefig(FIGURES / f"{name}.png", dpi=120, bbox_inches="tight")
+    plt.show()
+
+# Trip timestamps are naive NYC wall-clock values. Pin the session zone so
+# Spark does no DST arithmetic on them, and so every script in the pipeline
+# reads back exactly what the previous one wrote. See 03 for the full reason.
+spark = (
+    SparkSession.builder.appName("taxi_weather")
+    .master("local[*]")
+    .config("spark.sql.session.timeZone", "UTC")
+    .getOrCreate()
+)
 
 df = spark.read.parquet("data/cleaned_trips")
 
@@ -45,7 +69,7 @@ averages.show()
 data = hourly.toPandas()
 
 fig, ax = plt.subplots()
-fig.suptitle("Average revenue and trip volume by the hour of day")
+fig.suptitle("Total revenue and trip volume by the hour of day")
 twin1 = ax.twinx()
 
 x = data["pickup_hour"]
@@ -53,10 +77,10 @@ x = data["pickup_hour"]
 p1, = ax.plot(x, data["revenue_per_hour"], "8--m", label="Revenue", linewidth=2, ms=8)
 p2 = twin1.bar(x, data["trips_per_hour"], label="Trips")
 
-ax.set(ylim=(0, 2e7), xlabel="Hour of day", ylabel="Average revenue (1e7)")
-twin1.set(ylim=(0, 1e6), ylabel="Average number of trips (1e6)")
+ax.set(ylim=(0, 2e7), xlabel="Hour of day", ylabel="Total revenue ($)")
+twin1.set(ylim=(0, 1e6), ylabel="Number of trips")
 ax.set_xticks(x)
 
 ax.legend(handles=[p1, p2])
 
-plt.show()
+save_figure("revenue_and_trips_by_hour")
