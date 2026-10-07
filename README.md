@@ -83,7 +83,7 @@ Revenue and the number of trips usually reach their maximum at 5 and 6 p.m. (rus
 
 Seems unobviously, but statistically Thursday is the busiest day of the week (in terms of revenue and number of trips). The "Thursday is a little Friday" rule applies.  
 
-| Day of the week | Average number of trips | Average revenue per day of week |
+| Day of the week | Total number of trips | Total revenue per day of week |
 |---|---|--|
 | Thursday | 1490691 | $41,643,036 |
 | Wednesday | 1380980| $38,168,216 |
@@ -97,16 +97,20 @@ Seems unobviously, but statistically Thursday is the busiest day of the week (in
 
 ***rainy_hour_threshold = 2.5 mm/hour** The Bureau of Meteorology consider it as a lower bound for the moderate rain intensity - it is a lower bound for "rainy" hours in the project.
 
-the tips percentage is 2.9 percent higher than when it's not raining:
+At that threshold only **53 of 2183 hours (2.4%)** count as rainy, so these comparisons rest on a small sample and should be read as indicative rather than conclusive.
+
+All figures below are **trip-weighted**: the hourly aggregates carry sums and counts, which are pooled and divided once. Averaging the per-hour averages instead would give a quiet 4 a.m. hour the same weight as a 6 p.m. peak.
+
+the tips percentage is 1.5 percent higher than when it's not raining (25.65% vs 25.27%):
 
 ![Tip percentage in rainy and non-rainy hours](figures/tip_pct_in_rain.png)
 
 
-the trip volume is 23.3 percent higher than when it's not raining:
+the trip volume is 23.4 percent higher than when it's not raining (5172 vs 4191 trips per hour):
 
 ![Trips volume in rainy and non-rainy hours](figures/trips_in_rain.png)
 
-the speed is 12.7 percent lower than when it's not raining:
+the speed is 9.7 percent lower than when it's not raining (10.2 vs 11.3 mph):
 
 ![Speed in rainy and non-rainy hours](figures/speed_in_rain.png)
 
@@ -118,7 +122,7 @@ The number of trips goes up and the speed decreases significantly with increasin
 
 Difference between the data in the coldest interval and in the warmest one: 
 
-    tips: 0.53% drop, speed: 44.06% drop, number of trips: 178.1% increase
+    tips: 0.97% drop, speed: 29.87% drop, number of trips: 178.1% increase
 
 ## Questions
 
