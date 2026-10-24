@@ -15,33 +15,49 @@ df = spark.read.parquet("data/cleaned_trips")
 daily = df.groupBy("pickup_date").agg(
     f.count("*").alias("trips_amount"),
 )   
+# 1. Window for day-over-day percentage change in daily trip count (lag)
+window = Window.partitionBy("pickup_date").orderBy("pickup_date")
 
-# 1. Day-over-day percentage change in daily trip count (lag)
-window = Window.orderBy("pickup_date")
+# 2. Window for 7-day rolling average of daily trips (rowsBetween)
+# Trailing window - today plus the six days before it
+windowWeek = Window.partitionBy("pickup_date").orderBy("pickup_date").rowsBetween(-6, 0)
 
-trips_lag = daily.withColumn("prev_day", f.lag("trips_amount").over(window))
-trips_lag = trips_lag.withColumn(
+# Both window columns come from the same daily aggregate, so they are built on
+# one frame and cached. Deriving trips_lag and trips_week_avg from `daily`
+# separately made Spark rebuild the whole daily aggregation - a full pass over
+# the trips - once for each of them.
+#
+# Neither window has a partitionBy, so Spark gathers all rows into a single
+# partition to evaluate them. That is fine for 91 daily rows, and it is the
+# reason the warning about it is harmless here.
+daily_windows = daily.withColumns({
+    "prev_day": f.lag("trips_amount").over(window),
+    "avg_trips_weekly": f.round(f.avg("trips_amount").over(windowWeek)),
+}).withColumn(
+    # Measured against the previous day, so prev_day is the denominator.
     "change_in_trips_amount(%)",
     f.round((f.col("trips_amount") / f.col("prev_day") - 1) * 100, 2),
+).cache()
+
+trips_lag = daily_windows.select(
+    "pickup_date", "trips_amount", "prev_day", "change_in_trips_amount(%)"
 )
-
-# 2. 7-day rolling average of daily trips (rowsBetween)
-# Trailing window - today plus the six days before it
-windowWeek = Window.orderBy("pickup_date").rowsBetween(-6, 0)
-
-trips_week_avg = daily.withColumn("avg_trips_weekly", f.round(f.avg("trips_amount").over(windowWeek)))
+trips_week_avg = daily_windows.select("pickup_date", "trips_amount", "avg_trips_weekly")
 
 # 3. Top 3 busiest hours within each day (dense_rank).
-hourly = df.groupBy("pickup_date", f.hour("tpep_pickup_datetime").alias("pickup_hour")).agg(
+hourly = df.groupBy("pickup_date", f.hour("pickup_hour").alias("hour_of_day")).agg(
     f.count("*").alias("trips_per_hour")
 )
 w = Window.partitionBy("pickup_date").orderBy(f.col("trips_per_hour").desc())
 busiest_hours = hourly.withColumn("d_rank", f.dense_rank().over(w)).filter(f.col("d_rank") < 4).sort("pickup_date")
 
-#Print the results
+# Print the results
 print("Day-over-day percentage change in daily trip count:")
 trips_lag.show()
 print("7-day rolling average of daily trips:")
 trips_week_avg.show()
 print("Top 3 busiest hours within each day:")
 busiest_hours.show(n=21)
+
+daily_windows.unpersist()
+spark.stop()

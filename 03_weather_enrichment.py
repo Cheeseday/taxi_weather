@@ -50,10 +50,7 @@ card_tip = f.when(
     f.col("tip_pct"),
 )
 
-# Group by pickup hour, carrying SUMS AND COUNTS rather than averages.
-# An average cannot be averaged again later without weighting every hour
-# equally - a quiet 4 a.m. hour would count as much as a 6 p.m. peak. Keeping
-# the sums lets any later grouping divide once and get a trip-weighted answer.
+# Group by pickup hour, carrying sums and counts rather than averages
 hourly = df.groupBy("pickup_hour").agg(
     f.count("*").alias("trips_amount_hourly"),
     f.sum("total_amount").alias("revenue_sum"),
@@ -87,9 +84,6 @@ def weighted_stats():
     ]
 
 # Create weatherDF from json.
-# Read the three parallel arrays BY NAME: Spark sorts inferred struct fields
-# alphabetically, so positions 0/1/2 are precipitation/temperature_2m/time -
-# not the order they appear in the JSON file.
 raw_hourly = spark.read.json("data/archive").first()["hourly"]
 weather_df = spark.createDataFrame(
     zip(raw_hourly["time"], raw_hourly["temperature_2m"], raw_hourly["precipitation"]),
@@ -141,15 +135,13 @@ n_tips, n_speed, n_trips_volume, n_hours = normal_weather_df.first()
 print(f"Rainy hours (>= {rainy_hour_threshold} mm): {r_hours} of {r_hours + n_hours}")
 
 print(f"During rainy hours: \n \
-        the tips amount is {round((r_tips / n_tips - 1) * 100, 1)} percent higher than when it's not raining;\n \
-        the trip volume is {round((r_trips_volume / n_trips_volume - 1) * 100, 1)} percent higher than when it's not raining;\n \
-        the speed (in mph) is {round((1 - r_speed / n_speed) * 100, 1)} percent lower than when it's not raining."
+        {r_tips}% vs {n_tips}% - there is no meaningful tip effect for these two categories;\n \
+        the trip volume is {round((r_trips_volume / n_trips_volume - 1) * 100, 1)}% higher than when it's not raining;\n \
+        the speed (in mph) is {round((1 - r_speed / n_speed) * 100, 1)}% lower than when it's not raining."
 )
 
 # Finding the relation between temperature and indicators like tip percentage, trip speed, trip volume 
-# Label each hour with the lower bound of its bucket, then group once. The
-# previous version ran one filter+agg per bucket, i.e. one Spark job each, and
-# averaged the hourly averages rather than weighting them by trips.
+# Label each hour with the lower bound of its bucket, then group once. 
 temp_buckets = ((-10, -5), (-5, 0), (0, 5), (5, 10), (10, 15), (15, 20), (20, 25))
 
 bucket = f.lit(None).cast("int")
@@ -187,7 +179,7 @@ print(f"The number of trips is hugely increase and speed significantly decrease 
 )
 
 
-# Bar chart for tips in rainy hours (>= 2.5 mm per hour) in comparison with unrainy hours (the rest)
+# Bar chart for tips in rainy hours (>= 0.5 mm per hour) in comparison with unrainy hours (the rest)
 fig, ax = plt.subplots()
 bar_colors = ['tab:blue', 'tab:orange']
 

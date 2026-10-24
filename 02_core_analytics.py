@@ -18,32 +18,51 @@ def save_figure(name):
     plt.savefig(FIGURES / f"{name}.png", dpi=120, bbox_inches="tight")
     plt.show()
 
-# Trip timestamps are naive NYC wall-clock values. Pin the session zone so
-# Spark does no DST arithmetic on them, and so every script in the pipeline
-# reads back exactly what the previous one wrote. See 03 for the full reason.
+
 spark = (
     SparkSession.builder.appName("taxi_weather")
     .master("local[*]")
     .config("spark.sql.session.timeZone", "UTC")
+    .config("spark.driver.memory", "4g")
     .getOrCreate()
 )
 
 df = spark.read.parquet("data/cleaned_trips")
 
-# Trips and total revenue aggregated per day, per hour of day, and per day of week
-daily = df.groupBy("pickup_date").agg(
+# Trips and total revenue aggregated per day, per hour of day, and per day of week.
+#
+# Everything keyed on pickup_date is computed in ONE aggregation - counts, revenue
+# and the daily averages below. The frame is cached because it feeds three tables.
+by_day = df.groupBy("pickup_date").agg(
     f.count("*").alias("trips_per_day"),
-    f.round(f.sum("total_amount")).alias("revenue_per_day")
-).sort("pickup_date")
+    f.sum("total_amount").alias("revenue_sum"),  # unrounded: by_day_of_week re-adds it
+    f.round(f.avg("fare_amount"), 1).alias("avg_fare_amount"),
+    f.round(f.avg("trip_distance"), 1).alias("avg_trip_distance"),
+    f.round(f.avg("duration_min"), 1).alias("avg_duration_in_min"),
+    f.round(f.avg("speed_mph"), 1).alias("avg_speed"),
+).sort("pickup_date").cache()
 
-hourly = df.groupBy(f.hour("tpep_pickup_datetime").alias("pickup_hour")).agg(
+print("By day:")
+by_day.show()
+
+daily = by_day.select("pickup_date", "trips_per_day", f.round("revenue_sum").alias("revenue_per_day"))
+
+# Cached as well: this frame is shown below and then fed to the chart. Without it
+# toPandas() would recompute the whole aggregation from the Parquet files.
+#
+# hour_of_day (0-23) is read off the stored pickup_hour column
+hourly = df.groupBy(f.hour("pickup_hour").alias("hour_of_day")).agg(
     f.count("*").alias("trips_per_hour"),
     f.round(f.sum("total_amount")).alias("revenue_per_hour")
-).sort("pickup_hour")
+).sort("hour_of_day").cache()
 
-by_day_of_week = df.groupBy(f.date_format("tpep_pickup_datetime", "EEEE").alias("day_of_week")).agg(
-    f.count("*").alias("trips_per_day_of_week"),
-    f.round(f.sum("total_amount")).alias("revenue_per_day_of_week")
+# Built from the daily rows above instead of the trips: counts and revenue sums
+# add up across days, so summing each weekday's dates gives the same totals with
+# no second pass over the data. Revenue is rounded once, after this final sum -
+# adding up already-rounded daily figures would carry each day's rounding error.
+by_day_of_week = by_day.groupBy(f.date_format("pickup_date", "EEEE").alias("day_of_week")).agg(
+    f.sum("trips_per_day").alias("trips_per_day_of_week"),
+    f.round(f.sum("revenue_sum")).alias("revenue_per_day_of_week")
 ).sort("revenue_per_day_of_week", ascending=False)
 
 print("Trips and revenue per day:")
@@ -53,13 +72,10 @@ hourly.show(n=24)
 print("Trips and revenue per day of week:")
 by_day_of_week.show()
 
-# Average fare, distance, duration, and speed per day
-averages = df.groupBy("pickup_date").agg(
-    f.round(f.avg("fare_amount"), 1).alias("avg_fare_amount"),
-    f.round(f.avg("trip_distance"), 1).alias("avg_trip_distance"),
-    f.round(f.avg("duration_min"), 1).alias("avg_duration_in_min"),
-    f.round(f.avg("speed_mph"), 1).alias("avg_speed"),
-).sort("pickup_date")
+# Average fare, distance, duration, and speed per day - already computed above
+averages = by_day.select(
+    "pickup_date", "avg_fare_amount", "avg_trip_distance", "avg_duration_in_min", "avg_speed"
+)
 
 print("Average fare amount, distance, duration in minutes and speed (mph) per day:")
 averages.show()
@@ -72,15 +88,19 @@ fig, ax = plt.subplots()
 fig.suptitle("Total revenue and trip volume by the hour of day")
 twin1 = ax.twinx()
 
-x = data["pickup_hour"]
+x = data["hour_of_day"]
 
 p1, = ax.plot(x, data["revenue_per_hour"], "8--m", label="Revenue", linewidth=2, ms=8)
 p2 = twin1.bar(x, data["trips_per_hour"], label="Trips")
 
 ax.set(ylim=(0, 2e7), xlabel="Hour of day", ylabel="Total revenue ($)")
-twin1.set(ylim=(0, 1e6), ylabel="Number of trips")
+twin1.set(ylim=(0, 4e6), ylabel="Number of trips")
 ax.set_xticks(x)
 
 ax.legend(handles=[p1, p2])
 
 save_figure("revenue_and_trips_by_hour")
+
+by_day.unpersist()
+hourly.unpersist()
+spark.stop()
