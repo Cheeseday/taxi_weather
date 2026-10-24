@@ -2,13 +2,11 @@ from pyspark.sql import SparkSession
 from pyspark.sql import functions as f
 from pyspark.sql.window import Window
 
-# Trip timestamps are naive NYC wall-clock values. Pin the session zone so
-# Spark does no DST arithmetic on them, and so every script in the pipeline
-# reads back exactly what the previous one wrote. See 03 for the full reason.
 spark = (
     SparkSession.builder.appName("window_functions")
     .master("local[*]")
     .config("spark.sql.session.timeZone", "UTC")
+    .config("spark.driver.memory", "4g")
     .getOrCreate()
 )
 

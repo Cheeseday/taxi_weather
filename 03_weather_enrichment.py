@@ -29,13 +29,15 @@ spark = (
     SparkSession.builder.appName("weather_enrichment")
     .master("local[*]")
     .config("spark.sql.session.timeZone", "UTC")
+    .config("spark.driver.memory", "4g")
     .getOrCreate()
 )
 
+card_payment = 1
 tip_pct_threshold = 20000 # bigger tips only appears when the distance is equal 0.01 miles
-card_payment = 1 # verbal explanation what the threshold means
-speed_threshold = 55 # that threshold was chosed because it's a speed limit for highways in New York
-rainy_hour_threshold = 2.5 # The Bureau of Meteorology consider it as a lower bound for moderate rain intensity
+speed_threshold = 55 # a speed limit for highways in New York
+rainy_hour_threshold = 0.5 
+    # According to the UK Met Office, the boundary between "light" rain and "moderate" rain
 
 df = spark.read.parquet("data/cleaned_trips")
 

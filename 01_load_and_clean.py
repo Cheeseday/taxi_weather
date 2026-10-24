@@ -8,14 +8,12 @@ spark = (
     SparkSession.builder.appName("taxi_weather")
     .master("local[*]")
     .config("spark.sql.session.timeZone", "UTC")
+    # Set spark heap 4 GB  
+    .config("spark.driver.memory", "4g")
     .getOrCreate()
 )
 
-df = spark.read.parquet(
-            "/home/ales/Documents/taxi_weather/data/yellow_tripdata_2024-01.parquet",
-            "/home/ales/Documents/taxi_weather/data/yellow_tripdata_2024-02.parquet",
-            "/home/ales/Documents/taxi_weather/data/yellow_tripdata_2024-03.parquet"
-)
+df = spark.read.parquet(*(str(path) for path, _ in raw_months))
 
 duration_sec = f.unix_timestamp("tpep_dropoff_datetime") - f.unix_timestamp("tpep_pickup_datetime")
 
