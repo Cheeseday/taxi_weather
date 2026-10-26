@@ -7,6 +7,7 @@ from pathlib import Path
 
 
 FIGURES = Path(__file__).resolve().parent / "figures"
+FINDINGS = Path(__file__).resolve().parent / "findings"
 
 
 def save_figure(name):
@@ -112,7 +113,33 @@ if unmatched.count():
     print("weather hours with no trips:")
     unmatched.select("pickup_hour").show(5, False)
 
-extended_df.coalesce(1).write.mode("overwrite").parquet("data/findings")
+# Result tables kept in the repository. findings/ is tracked by git (data/ is
+# not), so they are written as plain CSV files with fixed names, which GitHub can
+# display. Both are aggregates - 8,783 hourly and 366 daily rows for 2024 - small
+# enough to collect with toPandas().
+#
+# The daily table is rolled up from the hourly one using the same sums and counts,
+# so tips and speed stay trip-weighted and the trips are not read a second time.
+# Like everything in this script, it excludes trips at speed_threshold or above.
+daily_summary = (
+    extended_df.groupBy(f.to_date("pickup_hour").alias("date"))
+    .agg(
+        f.sum("trips_amount_hourly").alias("trips"),
+        f.round(f.sum("revenue_sum"), 2).alias("revenue"),
+        f.round(f.sum("tip_pct_sum") / f.sum("tip_trips"), 2).alias("avg_tip_pct"),
+        f.round(f.sum("speed_sum") / f.sum("speed_trips"), 2).alias("avg_speed_mph"),
+        f.round(f.sum("precipitation"), 1).alias("precipitation_mm"),
+        f.sum(f.when(f.col("precipitation") >= rainy_hour_threshold, 1).otherwise(0)).alias("rainy_hours"),
+        f.round(f.avg("temperature"), 1).alias("temp_mean_c"),
+        f.min("temperature").alias("temp_min_c"),
+        f.max("temperature").alias("temp_max_c"),
+    )
+    .sort("date")
+)
+
+FINDINGS.mkdir(exist_ok=True)
+extended_df.toPandas().round(2).to_csv(FINDINGS / "hourly_summary.csv", index=False)
+daily_summary.toPandas().to_csv(FINDINGS / "daily_summary.csv", index=False)
 
 # Finding relation between weather and speed, tips amount, trip distance
 rainy_df = extended_df.filter(
@@ -141,14 +168,12 @@ print(f"During rainy hours: \n \
 )
 
 # Finding the relation between temperature and indicators like tip percentage, trip speed, trip volume 
-# Label each hour with the lower bound of its bucket, then group once. 
-temp_buckets = ((-10, -5), (-5, 0), (0, 5), (5, 10), (10, 15), (15, 20), (20, 25))
-
-bucket = f.lit(None).cast("int")
-for lower, upper in reversed(temp_buckets):
-    bucket = f.when(
-        (f.col("temperature") >= lower) & (f.col("temperature") < upper), f.lit(lower)
-    ).otherwise(bucket)
+# Label each hour with the lower bound of its 5-degree bucket, then group once.
+# floor() puts any temperature into a bucket, so the range follows the data: a
+# fixed list of ranges would silently drop every hour outside it (summer hours
+# above 25 °C, for example). The isNotNull filter only drops hours with no reading.
+BUCKET_WIDTH = 5
+bucket = (f.floor(f.col("temperature") / BUCKET_WIDTH) * BUCKET_WIDTH).cast("int")
 
 by_temp = (
     extended_df.withColumn("bucket_lower", bucket)
@@ -160,23 +185,27 @@ by_temp = (
 
 stat = [
     (
-        f"{row['bucket_lower']} to {row['bucket_lower'] + 5}",
+        f"{row['bucket_lower']} to {row['bucket_lower'] + BUCKET_WIDTH}",
         row["avg_tip_pct"],
         row["avg_speed_mph"],
         row["trips_amount"],
+        row["hours"],
     )
     for row in by_temp.collect()
 ]
 
 
-results = spark.createDataFrame(stat, ["Temperature interval (°C)", "Average tip percentage", "Average speed (mph)", "Average number of trips"])
+results = spark.createDataFrame(stat, ["Temperature interval (°C)", "Average tip percentage", "Average speed (mph)", "Average number of trips", "Hours"])
 print("\nAverage values by temperature intervals:")
 results.show()
-print(f"The number of trips is hugely increase and speed significantly decrease with temperature growth, tips percentage stays generally the same:\n\
-    For interval {stat[0][0]}°C: tips - {stat[0][1]} pct, speed - {stat[0][2]} mph, number of trips - {stat[0][3]}\n\
-    For interval {stat[-1][0]}°C: tips - {stat[-1][1]} pct, speed - {stat[-1][2]} mph, number of trips - {stat[-1][3]}\n\
-    Difference: tips - {round((1 - float(stat[-1][1]) / float(stat[0][1])) * 100, 2)}% drop, speed: {round(((1 - float(stat[-1][2]) / float(stat[0][2])) * 100), 2)}% drop, number of trips: {round(((float(stat[-1][3]) / float(stat[0][3]) - 1) * 100), 2)}% increase"
-)
+# Signed changes rather than fixed words like "drop" or "increase": the direction
+# depends on which months are loaded. The hour counts show how thin the extreme
+# buckets are, so read these two rows with care.
+coldest, warmest = stat[0], stat[-1]
+change = lambda i: (float(warmest[i]) / float(coldest[i]) - 1) * 100
+print(f"From the coldest interval ({coldest[0]} °C, {coldest[4]} hours) to the warmest "
+      f"({warmest[0]} °C, {warmest[4]} hours): tips {change(1):+.2f}%, "
+      f"speed {change(2):+.2f}%, number of trips {change(3):+.2f}%")
 
 
 # Bar chart for tips in rainy hours (>= 0.5 mm per hour) in comparison with unrainy hours (the rest)
@@ -227,8 +256,8 @@ speed = [row[2] for row in stat]
 trips = [row[3] for row in stat]
 temperature_intervals = [row[0] for row in stat]
 
-fig, ax = plt.subplots()
-fig.subplots_adjust(right=0.75, bottom=0.22)
+fig, ax = plt.subplots(figsize=(10, 5.5))
+fig.subplots_adjust(right=0.75, bottom=0.22, top=0.82)
 fig.suptitle("How temperature relates to tips, speed and number of trips")
 twin1 = ax.twinx()
 twin2 = ax.twinx()
@@ -242,9 +271,12 @@ p1, = ax.plot(x, tips, "C0", label="Average tips (%)", linewidth=2)
 p2, = twin1.plot(x, speed, "C1", label="Average speed (mph)", linewidth=2)
 p3, = twin2.plot(x, trips, "C2", label="Average number of trips", linewidth=2)
 
-ax.set(ylim=(22, 27), xlabel="Temperature interval (°C)", ylabel="Tips (%)")
-twin1.set(ylim=(8, 20), ylabel="Speed (mph)")
-twin2.set(ylim=(2200, 9000), ylabel="Number of trips")
+# No fixed limits: each line's range depends on the months loaded.
+ax.set(xlabel="Temperature interval (°C)", ylabel="Tips (%)")
+twin1.set(ylabel="Speed (mph)")
+twin2.set(ylabel="Number of trips")
+for axis in (ax, twin1, twin2):
+    axis.margins(y=0.08)
 
 ax.yaxis.label.set_color(p1.get_color())
 twin1.yaxis.label.set_color(p2.get_color())
@@ -257,5 +289,6 @@ twin2.tick_params(axis='y', colors=p3.get_color())
 ax.set_xticks(list(x))
 ax.set_xticklabels(temperature_intervals, rotation=45, ha="right")
 
-ax.legend(handles=[p1, p2, p3], loc=1)
+# Above the plot area, so it can never cover a line whatever the data does.
+ax.legend(handles=[p1, p2, p3], loc="lower center", bbox_to_anchor=(0.5, 1.02), ncol=3, frameon=False)
 save_figure("temperature_intervals")

@@ -20,9 +20,8 @@ from pathlib import Path
 
 import requests
 
-# Months of yellow-taxi data to analyse. Extend this list to widen the range -
-# the weather request derives its date span from it, so both sides stay in sync.
-MONTHS = ["2024-01", "2024-02", "2024-03"]
+# Months of yellow-taxi data to analyse
+MONTHS = ["2024-01", "2024-02", "2024-03", "2024-04", "2024-05", "2024-06", "2024-07", "2024-08", "2024-09", "2024-10", "2024-11", "2024-12"]
 
 # Lower Manhattan, the reference point for the weather lookup.
 LATITUDE, LONGITUDE = 40.71, -74.01
@@ -181,6 +180,7 @@ def main():
     start, end = date_span(MONTHS)
     DATA_DIR.mkdir(parents=True, exist_ok=True)
 
+    # jobs = [(where to save, where from, query params, how to check it)...]
     jobs = [
         (
             DATA_DIR / f"yellow_tripdata_{month}.parquet",
@@ -193,7 +193,7 @@ def main():
     jobs.append((DATA_DIR / "taxi_zone_lookup.csv", ZONE_URL, None, check_zone_csv))
     jobs.append(
         (
-            # Named 'archive' because that is the path 03_weather_enrichment.py reads.
+            # Named 'archive' because that is the path 03_weather_enrichment.py reads
             DATA_DIR / "archive",
             WEATHER_URL,
             {

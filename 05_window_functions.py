@@ -16,20 +16,12 @@ daily = df.groupBy("pickup_date").agg(
     f.count("*").alias("trips_amount"),
 )   
 # 1. Window for day-over-day percentage change in daily trip count (lag)
-window = Window.partitionBy("pickup_date").orderBy("pickup_date")
+window = Window.orderBy("pickup_date")
 
 # 2. Window for 7-day rolling average of daily trips (rowsBetween)
 # Trailing window - today plus the six days before it
-windowWeek = Window.partitionBy("pickup_date").orderBy("pickup_date").rowsBetween(-6, 0)
+windowWeek = Window.orderBy("pickup_date").rowsBetween(-6, 0)
 
-# Both window columns come from the same daily aggregate, so they are built on
-# one frame and cached. Deriving trips_lag and trips_week_avg from `daily`
-# separately made Spark rebuild the whole daily aggregation - a full pass over
-# the trips - once for each of them.
-#
-# Neither window has a partitionBy, so Spark gathers all rows into a single
-# partition to evaluate them. That is fine for 91 daily rows, and it is the
-# reason the warning about it is harmless here.
 daily_windows = daily.withColumns({
     "prev_day": f.lag("trips_amount").over(window),
     "avg_trips_weekly": f.round(f.avg("trips_amount").over(windowWeek)),

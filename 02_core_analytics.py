@@ -1,6 +1,7 @@
 from pyspark.sql import SparkSession
 from pyspark.sql import functions as f
 import matplotlib.pyplot as plt
+from matplotlib.ticker import FuncFormatter
 
 from pathlib import Path
 
@@ -84,7 +85,7 @@ averages.show()
 # Chart for revenue and trip volume by the hour of day
 data = hourly.toPandas()
 
-fig, ax = plt.subplots()
+fig, ax = plt.subplots(figsize=(9, 5))   # wide enough for 24 two-digit hour labels
 fig.suptitle("Total revenue and trip volume by the hour of day")
 twin1 = ax.twinx()
 
@@ -93,11 +94,21 @@ x = data["hour_of_day"]
 p1, = ax.plot(x, data["revenue_per_hour"], "8--m", label="Revenue", linewidth=2, ms=8)
 p2 = twin1.bar(x, data["trips_per_hour"], label="Trips")
 
-ax.set(ylim=(0, 2e7), xlabel="Hour of day", ylabel="Total revenue ($)")
-twin1.set(ylim=(0, 4e6), ylabel="Number of trips")
+# Both axes start at zero, with 15% headroom on top for the legend.
+in_millions = FuncFormatter(lambda value, _: f"{value / 1e6:g}")
+ax.set(ylim=(0, data["revenue_per_hour"].max() * 1.15),
+       xlabel="Hour of day", ylabel="Total revenue (million $)")
+twin1.set(ylim=(0, data["trips_per_hour"].max() * 1.15), ylabel="Number of trips (millions)")
+ax.yaxis.set_major_formatter(in_millions)
+twin1.yaxis.set_major_formatter(in_millions)
 ax.set_xticks(x)
 
-ax.legend(handles=[p1, p2])
+# The twin axis is drawn last, so its bars would cover the revenue line.
+# Raise the line's axis above it and make its background transparent.
+ax.set_zorder(twin1.get_zorder() + 1)
+ax.patch.set_visible(False)
+
+ax.legend(handles=[p1, p2], loc="upper left")
 
 save_figure("revenue_and_trips_by_hour")
 
